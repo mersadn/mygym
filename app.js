@@ -361,6 +361,11 @@ function switchTab(tabId) {
   const oldPanel = document.querySelector('.panel.active');
   const newPanel = document.getElementById('panel-' + tabId);
 
+  // اسکرول صفحه رو قبل از نمایش پنل جدید به بالا برمی‌گردونیم، چون
+  // اختلاف ارتفاع بین پنل‌ها (مثلاً روز خالی در مقابل جدول بلند) باعث
+  // پرش ناگهانی و حس «رفرش» می‌شد
+  window.scrollTo({ top: 0, behavior: 'auto' });
+
   if (direction && oldPanel && newPanel && oldPanel !== newPanel) {
     animatePanelSwitch(oldPanel, newPanel, direction);
   } else {
@@ -604,6 +609,31 @@ function escapeHtml(str) {
 /* ---------------------------------------------------------
    10) سیستم ست و استراحت و آلارم
    --------------------------------------------------------- */
+
+// آپدیت سبک فقط بخش‌های تغییرکرده‌ی یک آیتم (بدون بازسازی کل لیست)
+// تا در حین شمارش معکوس هر ثانیه، کل صفحه رفرش/فلش نزنه
+function updateItemTimerUI(id) {
+  const root = document.querySelector(`[data-item-id="${id}"]`);
+  if (!root) return;
+  const state = exerciseState.get(id);
+  if (!state) return;
+  const totalSets = root.querySelectorAll('.set-dot').length || SETS_PER_EXERCISE;
+
+  const timeLeftEl = root.querySelector('.time-left');
+  if (timeLeftEl) {
+    timeLeftEl.textContent = state.timerRunning
+      ? `استراحت: ${state.remaining}ثانیه`
+      : (state.currentSet > totalSets ? 'تمام شد ✓' : `ست ${state.currentSet}`);
+  }
+
+  const startBtn = root.querySelector('[data-set-start]');
+  if (startBtn) startBtn.textContent = state.timerRunning ? 'توقف' : 'شروع استراحت';
+
+  root.querySelectorAll('.set-dot').forEach((dot, i) => {
+    dot.classList.toggle('active', state.currentSet === i + 1);
+  });
+}
+
 function toggleSetTimer(id) {
   let state = exerciseState.get(id);
   if (!state) {
@@ -614,7 +644,7 @@ function toggleSetTimer(id) {
   if (state.timerRunning) {
     clearInterval(state.intervalId);
     state.timerRunning = false;
-    renderDayPanel();
+    updateItemTimerUI(id);
     return;
   }
   
@@ -623,19 +653,19 @@ function toggleSetTimer(id) {
   
   state.intervalId = setInterval(() => {
     state.remaining--;
-    renderDayPanel();
+    updateItemTimerUI(id);
     
     if (state.remaining <= 0) {
       clearInterval(state.intervalId);
       state.timerRunning = false;
       state.currentSet++;
       playAlarm();
-      renderDayPanel();
+      updateItemTimerUI(id);
       showToast(`ست ${state.currentSet} شروع شو`);
     }
   }, 1000);
   
-  renderDayPanel();
+  updateItemTimerUI(id);
 }
 
 function nextSet(id, totalSets) {
@@ -651,14 +681,14 @@ function nextSet(id, totalSets) {
   if (state.currentSet < totalSets) {
     state.currentSet++;
   }
-  renderDayPanel();
+  updateItemTimerUI(id);
 }
 
 function resetSets(id) {
   const state = exerciseState.get(id);
   if (state && state.intervalId) clearInterval(state.intervalId);
   exerciseState.set(id, { currentSet: 1, timerRunning: false, remaining: 0 });
-  renderDayPanel();
+  updateItemTimerUI(id);
   showToast('ریست شد');
 }
 

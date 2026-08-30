@@ -478,20 +478,32 @@ hr.sep { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
 /* ---------- set counter ---------- */
 .set-counter {
   display: inline-flex;
-  gap: 4px;
+  gap: 6px;
   margin-top: 8px;
 }
 .set-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--border);
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  background: var(--danger-dim);
+  border: 1.5px solid var(--danger);
+  transition: all .15s ease;
 }
-.set-dot.active {
+.set-dot.pending {
+  background: var(--danger-dim);
+  border-color: var(--danger);
+}
+.set-dot.pending.current {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(198, 255, 59, 0.25);
+  cursor: pointer;
+}
+.set-dot.pending.current:active {
+  transform: scale(0.9);
+}
+.set-dot.done {
   background: var(--accent);
-  width: 12px;
-  height: 12px;
-  margin-top: -2px;
+  border-color: var(--accent);
 }
 
 /* ---------- exercise timer state ---------- */
@@ -511,6 +523,10 @@ hr.sep { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
   font-weight: 800;
   color: var(--accent);
   font-size: 18px;
+}
+.timer-info.running {
+  background: rgba(198, 255, 59, 0.08);
+  border: 1px solid var(--accent-dim);
 }
 
 @media (min-width: 700px) {

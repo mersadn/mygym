@@ -25,7 +25,10 @@ html, body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Vazirmatn", Tahoma, sans-serif;
   direction: rtl;
   -webkit-tap-highlight-color: transparent;
-  overscroll-behavior-y: contain;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 body {
@@ -119,8 +122,15 @@ main {
   margin: 0 auto;
 }
 
-.panel { display: none; animation: fadein .18s ease; }
-.panel.active { display: block; }
+.panel { 
+  display: none; 
+  animation: fadein .18s ease; 
+  pointer-events: none;
+}
+.panel.active { 
+  display: block; 
+  pointer-events: auto;
+}
 
 @keyframes fadein { from { opacity: 0; transform: translateY(4px);} to { opacity: 1; transform: translateY(0);} }
 
@@ -407,6 +417,7 @@ hr.sep { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
 /* ---------- swipe animation ---------- */
 .swipe-container {
   overflow: hidden;
+  width: 100%;
 }
 
 .panel.slide-left {

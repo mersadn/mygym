@@ -217,6 +217,13 @@ let touchEndX = 0;
 let touchEndY = 0;
 let isSwipingDays = false;
 
+// لیست تب‌های کلی (برای swipe بین همه تب‌ها)
+const TAB_ORDER = [
+  'day0', 'day1', 'day2', 'day3', 'day4', 'day5', 'day6',
+  'profile', 'progress', 'conclusion'
+];
+let currentTabIndex = 0; // شاخص تب فعال در TAB_ORDER
+
 const exerciseState = new Map(); // id -> { currentSet: 1, timerRunning: false, remaining: 0, intervalId: null }
 const SHOW_LIMIT = 5;
 let progressShowAll = false;
@@ -276,17 +283,21 @@ function handleSwipe() {
   // باید مینیمم 40px کشش باشد
   if (Math.abs(diffX) < threshold) return;
   
-  if (diffX > 0) {
-    // حرکت به چپ - رفتن به روز بعدی
-    if (currentDayIndex < 6) {
-      currentDayIndex++;
-      switchTab('day' + currentDayIndex);
+  // پیدا کردن شاخص تب فعلی
+  const activeTabId = TAB_ORDER[currentTabIndex];
+  
+  // RTL است، پس منطق معکوس است
+  if (diffX < 0) {
+    // حرکت به راست (در RTL = تب بعدی)
+    if (currentTabIndex < TAB_ORDER.length - 1) {
+      currentTabIndex++;
+      switchTab(TAB_ORDER[currentTabIndex]);
     }
   } else {
-    // حرکت به راست - رفتن به روز قبلی
-    if (currentDayIndex > 0) {
-      currentDayIndex--;
-      switchTab('day' + currentDayIndex);
+    // حرکت به چپ (در RTL = تب قبلی)
+    if (currentTabIndex > 0) {
+      currentTabIndex--;
+      switchTab(TAB_ORDER[currentTabIndex]);
     }
   }
 }
@@ -301,6 +312,10 @@ function initTabs() {
 }
 
 function switchTab(tabId) {
+  // به‌روزرسانی currentTabIndex
+  currentTabIndex = TAB_ORDER.indexOf(tabId);
+  if (currentTabIndex === -1) currentTabIndex = 0;
+  
   // اگر روی تب روزها باشیم currentDayIndex رو آپ‌دیت کن
   if (tabId.startsWith('day')) {
     currentDayIndex = Number(tabId.replace('day', ''));
@@ -825,12 +840,88 @@ async function renderMeasurementsSection() {
 }
 
 /* ---------------------------------------------------------
-   15) راه‌اندازی برنامه
+   16) بک‌آپ و ریستور داده‌ها
+   --------------------------------------------------------- */
+async function exportData() {
+  try {
+    const profile = await dbGetAll('profile');
+    const logs = await dbGetAll('logs');
+    const measurements = await dbGetAll('measurements');
+    
+    const backup = {
+      version: 1,
+      timestamp: new Date().toISOString(),
+      data: { profile, logs, measurements }
+    };
+    
+    const json = JSON.stringify(backup, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `خانه-ورز-بک-آپ-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast('بک‌آپ دانلود شد');
+  } catch (e) {
+    console.error('خطا در بک‌آپ:', e);
+    showToast('خطا در بک‌آپ');
+  }
+}
+
+async function importData(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  
+  try {
+    // خواندن فایل
+    const text = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(reader.error);
+      reader.readAsText(file);
+    });
+    
+    const backup = JSON.parse(text);
+    
+    if (backup.version !== 1 || !backup.data) {
+      showToast('فایل بک‌آپ نامعتبر است');
+      return;
+    }
+    
+    // حذف داده‌های قدیمی و درج جدید
+    const db = await openDB();
+    
+    for (const [storeName, items] of Object.entries(backup.data)) {
+      // پاک‌کردن store
+      await new Promise((resolve, reject) => {
+        const t = db.transaction(storeName, 'readwrite');
+        const req = t.objectStore(storeName).clear();
+        t.oncomplete = () => resolve();
+        t.onerror = () => reject(t.error);
+      });
+      
+      // درج items جدید
+      for (const item of items) {
+        await dbPut(storeName, item);
+      }
+    }
+    
+    showToast('داده‌ها بازگرداندند شدند ✓');
+    setTimeout(() => location.reload(), 1200);
+  } catch (e) {
+    console.error('خطا در ریستور:', e);
+    showToast('خطا در ریستور داده‌ها');
+  }
+}
+
+/* ---------------------------------------------------------
+   17) راه‌اندازی برنامه
    --------------------------------------------------------- */
 async function init() {
   buildDayTabs();
   initTabs();
-  initSwipe(); // اضافه کردن swipe initializer
+  initSwipe();
   await firstRunSetup();
   document.getElementById('profileForm').addEventListener('submit', saveProfile);
   document.getElementById('exerciseForm').addEventListener('submit', saveExerciseForm);
@@ -842,8 +933,15 @@ async function init() {
   
   // FAB دکمه افزودن حرکت
   document.getElementById('fabAddEx').addEventListener('click', () => openExerciseModal(currentDayIndex));
+  
+  // دکمه‌های بک‌آپ
+  document.getElementById('exportDataBtn').addEventListener('click', exportData);
+  document.getElementById('importDataBtn').addEventListener('click', () => document.getElementById('importFileInput').click());
+  document.getElementById('importFileInput').addEventListener('change', importData);
 
-  switchTab('day' + currentDayIndex);
+  const initialTab = 'day' + currentDayIndex;
+  currentTabIndex = TAB_ORDER.indexOf(initialTab);
+  switchTab(initialTab);
   renderProfile();
 
   if ('serviceWorker' in navigator) {

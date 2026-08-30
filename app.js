@@ -1,11 +1,10 @@
 /* =========================================================
-   خانه‌ورز - برنامه ورزش در خانه
-   تمام منطق برنامه: ذخیره‌سازی (IndexedDB)، تقویم شمسی،
-   تب‌ها، ثانیه‌شمار و نمودار پیشرفت
+   خانه‌ورز - برنامه ورزش در خانه (ویرایش شده)
+   تمام منطق برنامه: ذخیره‌سازی، تقویم شمسی، سوایپ، ست/استراحت/آلارم
    ========================================================= */
 
 /* ---------------------------------------------------------
-   1) تبدیل تاریخ میلادی به شمسی (الگوریتم استاندارد جلالی)
+   1) تبدیل تاریخ میلادی به شمسی (الگوریتم جلالی)
    --------------------------------------------------------- */
 const Jalali = (() => {
   function div(a, b) { return Math.trunc(a / b); }
@@ -108,11 +107,7 @@ const Jalali = (() => {
   return { fromDate, format, weekIndexFromDate, weekRangeLabel, monthNames };
 })();
 
-// fix a small edge case in the leap lookback above by re-deriving with a simpler,
-// well-tested recursive approach for the "k < 0" branch (previous jalali year length).
 (function patchJalaliEdgeCase() {
-  // The main toJalaali implementation already matches the reference algorithm for
-  // the overwhelming majority of dates; this self-test just guards against drift.
   const check = Jalali.fromDate(new Date(2024, 2, 20)); // 1403/1/1
   if (check.jy !== 1403 || check.jm !== 1 || check.jd !== 1) {
     console.warn('Jalali conversion self-test failed', check);
@@ -120,7 +115,7 @@ const Jalali = (() => {
 })();
 
 /* ---------------------------------------------------------
-   2) لایه ذخیره‌سازی - IndexedDB (پایدار، بدون نیاز به اینترنت)
+   2) IndexedDB - ذخیره‌سازی پایدار
    --------------------------------------------------------- */
 const DB_NAME = 'homeGymDB';
 const DB_VERSION = 1;
@@ -191,7 +186,7 @@ async function dbDelete(storeName, key) {
 }
 
 /* ---------------------------------------------------------
-   3) راه‌اندازی اولیه (فقط بار اول اجرا)
+   3) راه‌اندازی اولیه
    --------------------------------------------------------- */
 async function firstRunSetup() {
   const done = localStorage.getItem('hg_first_run_done');
@@ -203,7 +198,7 @@ async function firstRunSetup() {
       if (navigator.storage && navigator.storage.persist) {
         await navigator.storage.persist();
       }
-    } catch (e) { /* در دسترس نبود، مشکلی نیست */ }
+    } catch (e) { }
     localStorage.setItem('hg_first_run_done', '1');
     backdrop.classList.add('hidden');
   }, { once: true });
@@ -216,13 +211,18 @@ const DAY_NAMES = ['شنبه', 'یکشنبه', 'دوشنبه', 'سه‌شنبه'
 let currentDayIndex = todayPersianDayIndex();
 let editingLogId = null;
 let editingMeasureId = null;
-const timers = new Map(); // logId -> { remaining, total, intervalId, running }
+let touchStartX = 0;
+let touchEndX = 0;
+
+const exerciseState = new Map(); // id -> { currentSet: 1, timerRunning: false, remaining: 0, intervalId: null }
 const SHOW_LIMIT = 5;
 let progressShowAll = false;
 let conclusionShowAll = false;
+const SETS_PER_EXERCISE = 3;
+const REST_SECONDS = 30;
 
 function todayPersianDayIndex() {
-  return (new Date().getDay() + 1) % 7; // شنبه=0 ... جمعه=6
+  return (new Date().getDay() + 1) % 7;
 }
 
 function todayWeekIndex() {
@@ -238,12 +238,42 @@ function showToast(msg) {
 }
 
 /* ---------------------------------------------------------
-   5) تب‌ها
+   5) سوایپ بین روزها
+   --------------------------------------------------------- */
+function initSwipe() {
+  const container = document.getElementById('dayPanels');
+  if (!container) return;
+  container.addEventListener('touchstart', (e) => {
+    touchStartX = e.changedTouches[0].screenX;
+  });
+  container.addEventListener('touchend', (e) => {
+    touchEndX = e.changedTouches[0].screenX;
+    handleSwipe();
+  });
+}
+
+function handleSwipe() {
+  const threshold = 50;
+  const diff = touchStartX - touchEndX;
+  if (Math.abs(diff) < threshold) return;
+  
+  if (diff > 0) {
+    // حرکت به چپ - رفتن به روز بعد
+    if (currentDayIndex < 6) switchTab('day' + (currentDayIndex + 1));
+  } else {
+    // حرکت به راست - رفتن به روز قبل
+    if (currentDayIndex > 0) switchTab('day' + (currentDayIndex - 1));
+  }
+}
+
+/* ---------------------------------------------------------
+   6) تب‌ها و سوایچ
    --------------------------------------------------------- */
 function initTabs() {
   document.querySelectorAll('.tabbtn').forEach((btn) => {
     btn.addEventListener('click', () => switchTab(btn.dataset.tab));
   });
+  initSwipe();
 }
 
 function switchTab(tabId) {
@@ -264,7 +294,7 @@ function switchTab(tabId) {
 }
 
 /* ---------------------------------------------------------
-   6) پروفایل (قد و وزن)
+   7) پروفایل
    --------------------------------------------------------- */
 async function renderProfile() {
   const p = (await dbGet('profile', 1)) || { id: 1, height: '', weight: '' };
@@ -281,7 +311,7 @@ async function saveProfile(e) {
 }
 
 /* ---------------------------------------------------------
-   7) روزهای هفته - افزودن/ویرایش/حذف حرکت
+   8) ساخت تب‌های روزها و افزودن حرکت
    --------------------------------------------------------- */
 function buildDayTabs() {
   const nav = document.getElementById('tabbar');
@@ -299,18 +329,23 @@ function buildDayTabs() {
     div.className = 'panel';
     div.id = 'panel-day' + idx;
     div.innerHTML = `
-      <div class="card">
-        <h2><span class="eyebrow">${name}</span> حرکت‌های امروز</h2>
-        <button class="btn btn-primary btn-block" data-add-ex="${idx}">+ افزودن ست ورزشی</button>
+      <div class="day-header">
+        <div class="day-name">${name}</div>
+        <div class="day-date">${getDayJalaliDate(idx)}</div>
+        <div class="day-desc">حرکت‌های برنامه‌ی امروز را اضافه کن</div>
       </div>
       <div id="exList-${idx}"></div>
     `;
     panels.appendChild(div);
   });
-  panels.addEventListener('click', (e) => {
-    const addBtn = e.target.closest('[data-add-ex]');
-    if (addBtn) openExerciseModal(Number(addBtn.dataset.addEx));
-  });
+}
+
+function getDayJalaliDate(dayIdx) {
+  const today = new Date();
+  const offset = dayIdx - todayPersianDayIndex();
+  const targetDate = new Date(today.getTime() + offset * 24 * 60 * 60 * 1000);
+  const j = Jalali.fromDate(targetDate);
+  return `${j.jd} ${Jalali.monthNames[j.jm - 1]} ${j.jy}`;
 }
 
 function openExerciseModal(dayIdx, log = null) {
@@ -321,7 +356,7 @@ function openExerciseModal(dayIdx, log = null) {
   document.getElementById('exType').value = log ? log.type : 'weight';
   document.getElementById('exWeight').value = log ? log.weight || '' : '';
   document.getElementById('exReps').value = log ? log.reps || '' : '';
-  document.getElementById('exSets').value = log ? log.sets || '' : '';
+  document.getElementById('exSets').value = log ? log.sets || SETS_PER_EXERCISE : '';
   document.getElementById('exSeconds').value = log ? log.seconds || '' : '';
   toggleExerciseTypeFields();
   document.getElementById('exModal').classList.remove('hidden');
@@ -350,7 +385,7 @@ async function saveExerciseForm(e) {
     day, type, name,
     weight: type === 'weight' ? Number(document.getElementById('exWeight').value) || 0 : null,
     reps: type === 'weight' ? Number(document.getElementById('exReps').value) || 0 : null,
-    sets: Number(document.getElementById('exSets').value) || 0,
+    sets: Number(document.getElementById('exSets').value) || SETS_PER_EXERCISE,
     seconds: type === 'time' ? Number(document.getElementById('exSeconds').value) || 0 : null,
     dateISO: now.toISOString(),
     jy: jy.jy, jm: jy.jm, jd: jy.jd,
@@ -371,14 +406,17 @@ async function saveExerciseForm(e) {
 }
 
 async function deleteLog(id) {
-  const t = timers.get(id);
-  if (t && t.intervalId) clearInterval(t.intervalId);
-  timers.delete(id);
+  const state = exerciseState.get(id);
+  if (state && state.intervalId) clearInterval(state.intervalId);
+  exerciseState.delete(id);
   await dbDelete('logs', id);
   renderDayPanel();
   showToast('حذف شد');
 }
 
+/* ---------------------------------------------------------
+   9) نمایش لیست حرکت‌های روز با سیستم ست و استراحت
+   --------------------------------------------------------- */
 async function renderDayPanel() {
   const idx = currentDayIndex;
   const listEl = document.getElementById('exList-' + idx);
@@ -386,7 +424,7 @@ async function renderDayPanel() {
   const all = await dbGetAll('logs');
   const items = all.filter((l) => l.day === idx).sort((a, b) => new Date(b.dateISO) - new Date(a.dateISO));
   if (!items.length) {
-    listEl.innerHTML = `<div class="empty"><span class="big">🏋️</span>هنوز ستی برای ${DAY_NAMES[idx]} ثبت نکردی.<br>با دکمه بالا شروع کن.</div>`;
+    listEl.innerHTML = `<div class="empty"><span class="big">🏋️</span>هنوز ستی برای ${DAY_NAMES[idx]} ثبت نکردی.</div>`;
     return;
   }
   listEl.innerHTML = items.map((it) => renderExerciseItem(it)).join('');
@@ -395,28 +433,54 @@ async function renderDayPanel() {
 
 function renderExerciseItem(it) {
   const dateLabel = `${it.jd} ${Jalali.monthNames[it.jm - 1]} ${it.jy}`;
-  const meta = it.type === 'weight'
-    ? `${it.weight} کیلوگرم × ${it.reps} تکرار × ${it.sets} ست`
-    : `${it.seconds} ثانیه × ${it.sets} ست`;
-  const timerHtml = it.type === 'time' ? `
-    <div class="timer-box">
-      <div class="timer-display" id="timerDisp-${it.id}" data-secs="${it.seconds}">${formatTime(it.seconds)}</div>
-      <div class="actions-row">
-        <button class="btn btn-primary btn-sm" data-timer-start="${it.id}">شروع</button>
-        <button class="btn btn-ghost btn-sm" data-timer-reset="${it.id}">ریست</button>
+  const state = exerciseState.get(it.id) || { currentSet: 1, timerRunning: false, remaining: 0 };
+  
+  let contentHtml = '';
+  if (it.type === 'weight') {
+    contentHtml = `<div class="ex-meta">${it.weight} کیلوگرم × ${it.reps} تکرار</div>`;
+  }
+  
+  // نمایش ست‌ها
+  let setCounterHtml = '<div class="set-counter">';
+  for (let i = 1; i <= (it.sets || SETS_PER_EXERCISE); i++) {
+    const isActive = state.currentSet === i ? 'active' : '';
+    setCounterHtml += `<div class="set-dot ${isActive}" title="ست ${i}"></div>`;
+  }
+  setCounterHtml += '</div>';
+  
+  // تایمر و دکمه‌های کنترل
+  let timerHtml = '';
+  if (it.type === 'time' || true) { // هر دو نوع نیاز به ست دارند
+    const displayText = state.timerRunning 
+      ? `استراحت: ${state.remaining}ثانیه` 
+      : (state.currentSet > (it.sets || SETS_PER_EXERCISE) ? 'تمام شد ✓' : `ست ${state.currentSet}`);
+    
+    timerHtml = `
+      <div class="timer-info">
+        <div class="time-left">${displayText}</div>
       </div>
-    </div>` : '';
+      <div class="actions-row">
+        <button class="btn btn-primary btn-sm" data-set-start="${it.id}">
+          ${state.timerRunning ? 'توقف' : 'شروع ست'}
+        </button>
+        <button class="btn btn-ghost btn-sm" data-set-next="${it.id}">ست بعدی</button>
+        <button class="btn btn-ghost btn-sm" data-set-reset="${it.id}">ریست</button>
+      </div>
+    `;
+  }
+  
   return `
     <div class="ex-item" data-item-id="${it.id}">
       <div class="ex-top">
         <div>
           <div class="ex-name">${escapeHtml(it.name)}</div>
-          <div class="ex-meta">${meta} · ${dateLabel}</div>
+          <div class="ex-meta">${it.sets || SETS_PER_EXERCISE} ست ${it.type === 'weight' ? '× ' + it.weight + 'کیلو × ' + it.reps : '× ' + it.seconds + 'ثانیه'} · ${dateLabel}</div>
         </div>
         <span class="ex-tag ${it.type}">${it.type === 'weight' ? 'وزنه‌ای' : 'زمانی'}</span>
       </div>
+      ${setCounterHtml}
       ${timerHtml}
-      <div class="actions-row">
+      <div class="actions-row" style="margin-top:8px;">
         <button class="btn btn-ghost btn-sm" data-edit="${it.id}">ویرایش</button>
         <button class="btn btn-danger btn-sm" data-del="${it.id}">حذف</button>
       </div>
@@ -426,16 +490,20 @@ function renderExerciseItem(it) {
 function attachItemHandlers(it) {
   const root = document.querySelector(`[data-item-id="${it.id}"]`);
   if (!root) return;
+  
   const editBtn = root.querySelector('[data-edit]');
   const delBtn = root.querySelector('[data-del]');
+  const startBtn = root.querySelector('[data-set-start]');
+  const nextBtn = root.querySelector('[data-set-next]');
+  const resetBtn = root.querySelector('[data-set-reset]');
+  
   if (editBtn) editBtn.addEventListener('click', () => openExerciseModal(it.day, it));
   if (delBtn) delBtn.addEventListener('click', () => {
     if (confirm('این ست حذف بشه؟')) deleteLog(it.id);
   });
-  const startBtn = root.querySelector('[data-timer-start]');
-  const resetBtn = root.querySelector('[data-timer-reset]');
-  if (startBtn) startBtn.addEventListener('click', () => toggleTimer(it.id, it.seconds));
-  if (resetBtn) resetBtn.addEventListener('click', () => resetTimer(it.id, it.seconds));
+  if (startBtn) startBtn.addEventListener('click', () => toggleSetTimer(it.id));
+  if (nextBtn) nextBtn.addEventListener('click', () => nextSet(it.id, it.sets || SETS_PER_EXERCISE));
+  if (resetBtn) resetBtn.addEventListener('click', () => resetSets(it.id));
 }
 
 function escapeHtml(str) {
@@ -445,107 +513,108 @@ function escapeHtml(str) {
 }
 
 /* ---------------------------------------------------------
-   8) ثانیه‌شمار + آلارم صوتی (کاملاً آفلاین با Web Audio)
+   10) سیستم ست و استراحت و آلارم
    --------------------------------------------------------- */
-function formatTime(totalSeconds) {
-  const s = Math.max(0, Math.floor(totalSeconds));
-  const m = Math.floor(s / 60);
-  const r = s % 60;
-  return `${String(m).padStart(2, '0')}:${String(r).padStart(2, '0')}`;
-}
-
-function toggleTimer(id, seconds) {
-  let t = timers.get(id);
-  const dispEl = document.getElementById('timerDisp-' + id);
-  const btn = document.querySelector(`[data-timer-start="${id}"]`);
-  if (t && t.running) {
-    clearInterval(t.intervalId);
-    t.running = false;
-    if (btn) btn.textContent = 'ادامه';
+function toggleSetTimer(id) {
+  let state = exerciseState.get(id);
+  if (!state) {
+    state = { currentSet: 1, timerRunning: false, remaining: REST_SECONDS };
+    exerciseState.set(id, state);
+  }
+  
+  if (state.timerRunning) {
+    clearInterval(state.intervalId);
+    state.timerRunning = false;
+    renderDayPanel();
     return;
   }
-  if (!t) {
-    t = { remaining: seconds, total: seconds, running: false };
-    timers.set(id, t);
-  }
-  t.running = true;
-  if (btn) btn.textContent = 'توقف';
-  if (dispEl) dispEl.classList.add('running');
-  t.intervalId = setInterval(() => {
-    t.remaining -= 1;
-    if (dispEl) dispEl.textContent = formatTime(t.remaining);
-    if (t.remaining <= 0) {
-      clearInterval(t.intervalId);
-      t.running = false;
-      if (dispEl) { dispEl.classList.remove('running'); dispEl.classList.add('done'); }
-      if (btn) btn.textContent = 'شروع';
+  
+  state.timerRunning = true;
+  state.remaining = REST_SECONDS;
+  
+  state.intervalId = setInterval(() => {
+    state.remaining--;
+    renderDayPanel();
+    
+    if (state.remaining <= 0) {
+      clearInterval(state.intervalId);
+      state.timerRunning = false;
+      state.currentSet++;
       playAlarm();
+      renderDayPanel();
+      showToast(`ست ${state.currentSet} شروع شو`);
     }
   }, 1000);
+  
+  renderDayPanel();
 }
 
-function resetTimer(id, seconds) {
-  const t = timers.get(id);
-  if (t && t.intervalId) clearInterval(t.intervalId);
-  timers.set(id, { remaining: seconds, total: seconds, running: false });
-  const dispEl = document.getElementById('timerDisp-' + id);
-  const btn = document.querySelector(`[data-timer-start="${id}"]`);
-  if (dispEl) { dispEl.textContent = formatTime(seconds); dispEl.classList.remove('running', 'done'); }
-  if (btn) btn.textContent = 'شروع';
+function nextSet(id, totalSets) {
+  let state = exerciseState.get(id);
+  if (!state) {
+    state = { currentSet: 1, timerRunning: false, remaining: 0 };
+    exerciseState.set(id, state);
+  }
+  
+  if (state.intervalId) clearInterval(state.intervalId);
+  state.timerRunning = false;
+  
+  if (state.currentSet < totalSets) {
+    state.currentSet++;
+  }
+  renderDayPanel();
 }
 
+function resetSets(id) {
+  const state = exerciseState.get(id);
+  if (state && state.intervalId) clearInterval(state.intervalId);
+  exerciseState.set(id, { currentSet: 1, timerRunning: false, remaining: 0 });
+  renderDayPanel();
+  showToast('ریست شد');
+}
+
+/* ---------------------------------------------------------
+   11) آلارم صوتی
+   --------------------------------------------------------- */
 let audioCtx = null;
 function playAlarm() {
   try {
     audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
     const now = audioCtx.currentTime;
-    [0, 0.35, 0.7].forEach((offset) => {
-      const osc = audioCtx.createOscillator();
-      const gain = audioCtx.createGain();
-      osc.type = 'square';
-      osc.frequency.value = 880;
-      gain.gain.setValueAtTime(0.0001, now + offset);
-      gain.gain.exponentialRampToValueAtTime(0.35, now + offset + 0.02);
-      gain.gain.exponentialRampToValueAtTime(0.0001, now + offset + 0.28);
-      osc.connect(gain).connect(audioCtx.destination);
-      osc.start(now + offset);
-      osc.stop(now + offset + 0.3);
-    });
-  } catch (e) { /* اگر مرورگر پشتیبانی نکرد، بی‌صدا رد شو */ }
-  if (navigator.vibrate) navigator.vibrate([300, 100, 300, 100, 300]);
-  showToast('⏰ زمان تمام شد!');
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.frequency.setValueAtTime(800, now);
+    osc.frequency.setValueAtTime(600, now + 0.1);
+    gain.gain.setValueAtTime(0.3, now);
+    gain.gain.setValueAtTime(0, now + 0.2);
+    osc.start(now);
+    osc.stop(now + 0.2);
+  } catch (e) { console.log('آلارم صوتی دسترس‌پذیر نبود'); }
 }
 
 /* ---------------------------------------------------------
-   9) تب جدول پیشرفت (تمام حرکات ثبت‌شده)
+   12) جدول پیشرفت
    --------------------------------------------------------- */
 async function renderProgressTable() {
   const all = await dbGetAll('logs');
-  all.sort((a, b) => new Date(b.dateISO) - new Date(a.dateISO));
   const wrap = document.getElementById('progressTableWrap');
-  const btnWrap = document.getElementById('progressShowMoreWrap');
   if (!all.length) {
-    wrap.innerHTML = `<div class="empty"><span class="big">📊</span>هنوز داده‌ای برای نمایش نیست.</div>`;
-    btnWrap.innerHTML = '';
+    wrap.innerHTML = `<div class="empty"><span class="big">📊</span>هنوز ستی ثبت نشده.</div>`;
     return;
   }
-  const items = progressShowAll ? all : all.slice(0, SHOW_LIMIT);
-  wrap.innerHTML = `
-    <div class="scroll-list">
-      <table class="data-table">
-        <thead><tr><th>تاریخ</th><th>روز</th><th>حرکت</th><th>مقدار</th><th>ست</th></tr></thead>
-        <tbody>
-          ${items.map((it) => `
-            <tr>
-              <td>${it.jd} ${Jalali.monthNames[it.jm - 1]}</td>
-              <td>${DAY_NAMES[it.day]}</td>
-              <td>${escapeHtml(it.name)}</td>
-              <td>${it.type === 'weight' ? it.weight + ' کیلو × ' + it.reps : it.seconds + ' ثانیه'}</td>
-              <td>${it.sets}</td>
-            </tr>`).join('')}
-        </tbody>
-      </table>
-    </div>`;
+  all.sort((a, b) => new Date(b.dateISO) - new Date(a.dateISO));
+  const shown = progressShowAll ? all : all.slice(0, SHOW_LIMIT);
+  let html = `<table class="data-table"><thead><tr><th>حرکت</th><th>نوع</th><th>مقدار</th><th>روز</th></tr></thead><tbody>`;
+  shown.forEach((l) => {
+    const val = l.type === 'weight' ? `${l.weight}kg×${l.reps}` : `${l.seconds}s`;
+    html += `<tr><td>${escapeHtml(l.name)}</td><td>${l.type === 'weight' ? 'وزنه' : 'زمان'}</td><td>${val}</td><td>${DAY_NAMES[l.day]}</td></tr>`;
+  });
+  html += `</tbody></table>`;
+  wrap.innerHTML = html;
+  
+  const btnWrap = document.getElementById('progressShowMoreWrap');
   if (all.length > SHOW_LIMIT) {
     btnWrap.innerHTML = `<button class="btn btn-ghost btn-sm" id="progressToggleBtn">${progressShowAll ? 'نمایش کمتر' : `نمایش همه (${all.length})`}</button>`;
     document.getElementById('progressToggleBtn').addEventListener('click', () => {
@@ -558,7 +627,7 @@ async function renderProgressTable() {
 }
 
 /* ---------------------------------------------------------
-   10) تب نتیجه‌گیری - مقایسه هفتگی بر اساس تقویم شمسی
+   13) نتیجه‌گیری و مقایسه
    --------------------------------------------------------- */
 async function renderConclusion() {
   await renderMeasurementsSection();
@@ -568,17 +637,15 @@ async function renderConclusion() {
     wrap.innerHTML = `<div class="empty"><span class="big">📈</span>وقتی حداقل یک هفته تمرین ثبت کنی، اینجا پیشرفتت رو می‌بینی.</div>`;
     return;
   }
-  // گروه‌بندی بر اساس هفته و نام حرکت
   const byWeek = {};
   all.forEach((l) => {
     byWeek[l.weekIndex] = byWeek[l.weekIndex] || {};
     byWeek[l.weekIndex][l.name] = byWeek[l.weekIndex][l.name] || [];
     byWeek[l.weekIndex][l.name].push(l);
   });
-  const weekIdxs = Object.keys(byWeek).map(Number).sort((a, b) => b - a); // جدیدترین اول
+  const weekIdxs = Object.keys(byWeek).map(Number).sort((a, b) => b - a);
   const shownWeeks = conclusionShowAll ? weekIdxs : weekIdxs.slice(0, SHOW_LIMIT);
 
-  // برای هر نام حرکت، بهترین مقدار هر هفته را پیدا کن (برای مقایسه با هفته قبلی‌اش)
   function bestValue(entries, type) {
     if (type === 'weight') return Math.max(...entries.map((e) => e.weight || 0));
     return Math.max(...entries.map((e) => e.seconds || 0));
@@ -608,14 +675,7 @@ async function renderConclusion() {
         else deltaHtml = `<span class="delta flat">بدون تغییر</span>`;
       }
       const valLabel = type === 'weight' ? `${val} کیلوگرم` : `${val} ثانیه`;
-      html += `
-        <div class="compare-row">
-          <div>
-            <div class="name">${escapeHtml(name)}</div>
-            <div class="vals">بهترین این هفته: ${valLabel}</div>
-          </div>
-          ${deltaHtml}
-        </div>`;
+      html += `<div class="compare-row"><div><div class="name">${escapeHtml(name)}</div><div class="vals">بهترین این هفته: ${valLabel}</div></div>${deltaHtml}</div>`;
     });
     html += `</div>`;
   });
@@ -634,7 +694,7 @@ async function renderConclusion() {
 }
 
 /* ---------------------------------------------------------
-   11) اندازه‌گیری‌های بدن (دور بازو، شکم، پا، ...)
+   14) اندازه‌گیری‌های بدن
    --------------------------------------------------------- */
 function openMeasureModal(m = null) {
   editingMeasureId = m ? m.id : null;
@@ -691,14 +751,13 @@ async function renderMeasurementsSection() {
     wrap.innerHTML = `<div class="empty">هنوز اندازه‌گیری‌ای ثبت نشده.</div>`;
     return;
   }
-  // مقایسه با آخرین ثبت قبلی برای هر فیلد
   const latest = all[0];
   const prev = all.find((m) => m.weekIndex < latest.weekIndex);
   function deltaFor(field) {
     if (!prev || latest[field] == null || prev[field] == null) return '';
     const d = latest[field] - prev[field];
     if (d === 0) return '';
-    const cls = d < 0 ? 'up' : 'down'; // برای دور بدن، کاهش = پیشرفت
+    const cls = d < 0 ? 'up' : 'down';
     return ` <span class="delta ${cls}" style="padding:1px 6px;font-size:10.5px;">${d > 0 ? '+' : ''}${d}</span>`;
   }
   const fieldsHtml = [
@@ -737,7 +796,7 @@ async function renderMeasurementsSection() {
 }
 
 /* ---------------------------------------------------------
-   12) راه‌اندازی برنامه
+   15) راه‌اندازی برنامه
    --------------------------------------------------------- */
 async function init() {
   buildDayTabs();
@@ -750,8 +809,10 @@ async function init() {
   document.getElementById('measureForm').addEventListener('submit', saveMeasureForm);
   document.getElementById('measureModalClose').addEventListener('click', closeMeasureModal);
   document.getElementById('addMeasureBtn').addEventListener('click', () => openMeasureModal());
+  
+  // FAB دکمه افزودن حرکت
+  document.getElementById('fabAddEx').addEventListener('click', () => openExerciseModal(currentDayIndex));
 
-  // تب پیش‌فرض: امروز
   switchTab('day' + currentDayIndex);
   renderProfile();
 

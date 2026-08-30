@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
+<title>خانه‌ورز | ورزش در خانه</title>
+<meta name="description" content="برنامه پیگیری تمرین‌های ورزشی در خانه، کاملاً آفلاین" />
+<meta name="theme-color" content="#0f1113" />
+<link rel="manifest" href="./manifest.json" />
+<link rel="icon" href="./icon-192.png" />
+<link rel="apple-touch-icon" href="./icon-192.png" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="خانه‌ورز" />
+<link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+
+<header class="app-header">
+  <div class="brand">
+    <div class="brand-mark">💪</div>
+    <div>
+      <h1>خانه‌ورز</h1>
+      <div class="sub">برنامه ورزش در خانه · کاملاً آفلاین</div>
+    </div>
+  </div>
+</header>
+
+<nav class="tabbar" id="tabbar">
+  <button class="tabbtn" data-tab="profile">پروفایل</button>
+  <!-- تب‌های روزهای هفته دقیقاً همین‌جا با جاوااسکریپت درج می‌شوند -->
+  <button class="tabbtn" data-tab="progress" id="tabProgress">جدول</button>
+  <button class="tabbtn" data-tab="conclusion" id="tabConclusion">نتیجه‌گیری</button>
+</nav>
+
+<main>
+
+  <!-- ===== تب پروفایل ===== -->
+  <div class="panel" id="panel-profile">
+    <div class="card">
+      <h2><span class="eyebrow">پروفایل</span> اطلاعات بدنی</h2>
+      <form id="profileForm">
+        <div class="row2">
+          <div class="field">
+            <label for="inpHeight">قد (سانتی‌متر)</label>
+            <input type="number" id="inpHeight" min="0" step="0.1" placeholder="مثلاً ۱۷۵" />
+          </div>
+          <div class="field">
+            <label for="inpWeight">وزن (کیلوگرم)</label>
+            <input type="number" id="inpWeight" min="0" step="0.1" placeholder="مثلاً ۷۰" />
+          </div>
+        </div>
+        <button type="submit" class="btn btn-primary btn-block">ذخیره پروفایل</button>
+      </form>
+    </div>
+    <div class="card">
+      <h2>راهنما</h2>
+      <p style="font-size:13px;color:var(--text-muted);line-height:2;">
+        از تب‌های بالا روز هفته رو انتخاب کن و ست‌های ورزشیت رو اضافه کن.
+        برای حرکاتی که با زمان انجام میشن (مثل پلانک)، نوع «زمانی» رو انتخاب کن تا ثانیه‌شمار و آلارم فعال بشه.
+        تب «جدول» همه‌ی ست‌های ثبت‌شده رو نشون می‌ده و تب «نتیجه‌گیری» پیشرفت هفتگیت رو بر اساس تقویم شمسی مقایسه می‌کنه.
+      </p>
+    </div>
+  </div>
+
+  <!-- ===== تب‌های روزهای هفته (با جاوااسکریپت پر می‌شوند) ===== -->
+  <div id="dayPanels"></div>
+
+  <!-- ===== تب جدول پیشرفت ===== -->
+  <div class="panel" id="panel-progress">
+    <div class="card">
+      <h2><span class="eyebrow">جدول</span> همه‌ی ست‌های ثبت‌شده</h2>
+      <div id="progressTableWrap"></div>
+      <div class="show-more-wrap" id="progressShowMoreWrap"></div>
+    </div>
+  </div>
+
+  <!-- ===== تب نتیجه‌گیری ===== -->
+  <div class="panel" id="panel-conclusion">
+    <div class="card">
+      <h2><span class="eyebrow">اندازه‌گیری</span> دور بدن</h2>
+      <button class="btn btn-primary btn-block" id="addMeasureBtn">+ ثبت اندازه‌گیری جدید</button>
+      <div style="margin-top:12px;" id="measureListWrap"></div>
+    </div>
+    <div class="card">
+      <h2><span class="eyebrow">پیشرفت</span> مقایسه هفتگی تمرین‌ها</h2>
+      <div id="conclusionExWrap"></div>
+      <div class="show-more-wrap" id="conclusionShowMoreWrap"></div>
+    </div>
+  </div>
+
+</main>
+
+<!-- ===== مودال افزودن/ویرایش ست ورزشی ===== -->
+<div class="modal-backdrop hidden" id="exModal">
+  <div class="modal-sheet">
+    <h3 id="exModalTitle">ست ورزشی جدید</h3>
+    <form id="exerciseForm">
+      <input type="hidden" id="exDay" />
+      <div class="field">
+        <label for="exName">نام حرکت</label>
+        <input type="text" id="exName" placeholder="مثلاً اسکات با دمبل" required />
+      </div>
+      <div class="field">
+        <label for="exType">نوع حرکت</label>
+        <select id="exType">
+          <option value="weight">وزنه‌ای (وزن + تکرار)</option>
+          <option value="time">زمانی (ثانیه‌شمار)</option>
+        </select>
+      </div>
+      <div class="row2" id="weightFields">
+        <div class="field">
+          <label for="exWeight">وزن (kg)</label>
+          <input type="number" id="exWeight" min="0" step="0.5" />
+        </div>
+        <div class="field">
+          <label for="exReps">تکرار</label>
+          <input type="number" id="exReps" min="0" />
+        </div>
+      </div>
+      <div class="row2" id="timeFields" style="display:none;">
+        <div class="field">
+          <label for="exSeconds">مدت هر ست (ثانیه)</label>
+          <input type="number" id="exSeconds" min="0" />
+        </div>
+      </div>
+      <div class="field">
+        <label for="exSets">تعداد ست</label>
+        <input type="number" id="exSets" min="0" placeholder="مثلاً ۳" />
+      </div>
+      <div class="actions-row">
+        <button type="submit" class="btn btn-primary btn-block">ذخیره</button>
+        <button type="button" class="btn btn-ghost" id="exModalClose">انصراف</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ===== مودال افزودن/ویرایش اندازه‌گیری ===== -->
+<div class="modal-backdrop hidden" id="measureModal">
+  <div class="modal-sheet">
+    <h3 id="measureModalTitle">اندازه‌گیری جدید</h3>
+    <form id="measureForm">
+      <div class="row2">
+        <div class="field">
+          <label for="mArm">دور بازو (cm)</label>
+          <input type="number" id="mArm" min="0" step="0.5" />
+        </div>
+        <div class="field">
+          <label for="mWaist">دور شکم (cm)</label>
+          <input type="number" id="mWaist" min="0" step="0.5" />
+        </div>
+      </div>
+      <div class="row2">
+        <div class="field">
+          <label for="mLeg">دور پا (cm)</label>
+          <input type="number" id="mLeg" min="0" step="0.5" />
+        </div>
+        <div class="field">
+          <label for="mChest">دور سینه (cm)</label>
+          <input type="number" id="mChest" min="0" step="0.5" />
+        </div>
+      </div>
+      <div class="field">
+        <label for="mNote">یادداشت (اختیاری)</label>
+        <input type="text" id="mNote" placeholder="مثلاً صبح ناشتا" />
+      </div>
+      <div class="actions-row">
+        <button type="submit" class="btn btn-primary btn-block">ذخیره</button>
+        <button type="button" class="btn btn-ghost" id="measureModalClose">انصراف</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ===== مودال خوش‌آمدگویی بار اول ===== -->
+<div class="modal-backdrop hidden" id="welcomeModal">
+  <div class="modal-sheet">
+    <div class="welcome-icon">👋</div>
+    <h3>به خانه‌ورز خوش اومدی</h3>
+    <p style="font-size:13.5px;color:var(--text-muted);line-height:2;margin-bottom:16px;">
+      این برنامه تمام اطلاعاتت (قد، وزن، ست‌های ورزشی، اندازه‌گیری‌ها) رو مستقیم داخل همین گوشی و همین مرورگر ذخیره می‌کنه؛
+      با رفرش کردن یا بستن صفحه پاک نمیشه و به اینترنت هم نیازی نداره.
+      این پیام فقط همین یک‌بار نمایش داده میشه.
+    </p>
+    <button class="btn btn-primary btn-block" id="welcomeStartBtn">باشه، شروع کن</button>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script src="./app.js"></script>
+</body>
+</html>

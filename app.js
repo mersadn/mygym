@@ -340,15 +340,12 @@ function switchTab(tabId) {
 
   document.querySelectorAll('.tabbtn').forEach((b) => b.classList.toggle('active', b.dataset.tab === tabId));
 
-  const oldPanel = document.querySelector('.panel.active');
-  const newPanel = document.getElementById('panel-' + tabId);
+  // دکمه‌ی شناور «افزودن حرکت» فقط باید توی تب روزهای هفته دیده بشه
+  const fab = document.getElementById('fabAddEx');
+  if (fab) fab.style.display = tabId.startsWith('day') ? 'flex' : 'none';
 
-  if (direction && oldPanel && newPanel && oldPanel !== newPanel) {
-    animatePanelSwitch(oldPanel, newPanel, direction);
-  } else {
-    document.querySelectorAll('.panel').forEach((p) => p.classList.toggle('active', p.id === 'panel-' + tabId));
-  }
-
+  // محتوای پنل جدید را قبل از نمایش/انیمیشن آپدیت می‌کنیم تا هنگام
+  // اسلاید شدن، ری‌رندر شدن محتوا باعث پرش/فلش زشت روی صفحه نشه
   if (tabId.startsWith('day')) {
     renderDayPanel();
   } else if (tabId === 'progress') {
@@ -359,6 +356,15 @@ function switchTab(tabId) {
     renderConclusion();
   } else if (tabId === 'profile') {
     renderProfile();
+  }
+
+  const oldPanel = document.querySelector('.panel.active');
+  const newPanel = document.getElementById('panel-' + tabId);
+
+  if (direction && oldPanel && newPanel && oldPanel !== newPanel) {
+    animatePanelSwitch(oldPanel, newPanel, direction);
+  } else {
+    document.querySelectorAll('.panel').forEach((p) => p.classList.toggle('active', p.id === 'panel-' + tabId));
   }
 }
 
@@ -423,21 +429,12 @@ function buildDayTabs() {
     div.innerHTML = `
       <div class="day-header">
         <div class="day-name">${name}</div>
-        <div class="day-date">${getDayJalaliDate(idx)}</div>
         <div class="day-desc">حرکت‌های برنامه‌ی امروز را اضافه کن</div>
       </div>
       <div id="exList-${idx}"></div>
     `;
     panels.appendChild(div);
   });
-}
-
-function getDayJalaliDate(dayIdx) {
-  const today = new Date();
-  const offset = dayIdx - todayPersianDayIndex();
-  const targetDate = new Date(today.getTime() + offset * 24 * 60 * 60 * 1000);
-  const j = Jalali.fromDate(targetDate);
-  return `${j.jd} ${Jalali.monthNames[j.jm - 1]} ${j.jy}`;
 }
 
 function openExerciseModal(dayIdx, log = null) {
@@ -553,7 +550,7 @@ function renderExerciseItem(it) {
       </div>
       <div class="actions-row">
         <button class="btn btn-primary btn-sm" data-set-start="${it.id}">
-          ${state.timerRunning ? 'توقف' : 'شروع ست'}
+          ${state.timerRunning ? 'توقف' : 'شروع استراحت'}
         </button>
         <button class="btn btn-ghost btn-sm" data-set-next="${it.id}">ست بعدی</button>
         <button class="btn btn-ghost btn-sm" data-set-reset="${it.id}">ریست</button>

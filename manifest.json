@@ -1,0 +1,39 @@
+{
+  "name": "خانه‌ورز | برنامه ورزش در خانه",
+  "short_name": "خانه‌ورز",
+  "description": "برنامه پیگیری تمرین‌های ورزشی در خانه با ثبت پیشرفت هفتگی",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0F1113",
+  "theme_color": "#0F1113",
+  "dir": "rtl",
+  "lang": "fa",
+  "icons": [
+    {
+      "src": "./icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "./icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

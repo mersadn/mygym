@@ -252,23 +252,39 @@ function showToast(msg) {
    --------------------------------------------------------- */
 function initSwipe() {
   document.addEventListener('touchstart', (e) => {
-    // فقط روی روزها (نه روی modals یا دیگر elements)
-    if (e.target.closest('.modal-backdrop, button, input, select')) return;
+    // فقط با یک انگشت (نه پینچ/زوم)
+    if (e.touches.length !== 1) { isSwipingDays = false; return; }
+    // فقط روی روزها (نه روی modals، دکمه‌ها، فرم‌ها یا نوار تب که خودش اسکرول افقی دارد)
+    if (e.target.closest('.modal-backdrop, button, input, select, textarea, nav.tabbar')) {
+      isSwipingDays = false;
+      return;
+    }
     touchStartX = e.touches[0].clientX;
     touchStartY = e.touches[0].clientY;
+    // مقداردهی اولیه‌ی نقطه‌ی پایان با نقطه‌ی شروع تا در صورت یک "تپ" ساده
+    // (بدون هیچ حرکتی که باعث fire شدن touchmove بشه) مقادیر قبلی باقی‌مانده
+    // از سوایپ‌های پیشین باعث تشخیص اشتباه سوایپ نشوند.
+    touchEndX = touchStartX;
+    touchEndY = touchStartY;
     isSwipingDays = true;
-  }, false);
+  }, { passive: true });
 
   document.addEventListener('touchmove', (e) => {
     if (!isSwipingDays) return;
     touchEndX = e.touches[0].clientX;
     touchEndY = e.touches[0].clientY;
-  }, false);
+  }, { passive: true });
 
-  document.addEventListener('touchend', (e) => {
+  document.addEventListener('touchend', () => {
     if (!isSwipingDays) return;
     isSwipingDays = false;
     handleSwipe();
+    // ریست کردن مقادیر تا در تپ‌های بعدی اثر نگذارند
+    touchStartX = touchStartY = touchEndX = touchEndY = 0;
+  }, false);
+
+  document.addEventListener('touchcancel', () => {
+    isSwipingDays = false;
   }, false);
 }
 
@@ -276,28 +292,23 @@ function handleSwipe() {
   const threshold = 40;
   const diffX = touchStartX - touchEndX;
   const diffY = Math.abs(touchStartY - touchEndY);
-  
+
   // اگر حرکت عمودی بیش‌تر از افقی باشد، swipe محسوب نمی‌شود
   if (diffY > Math.abs(diffX)) return;
-  
+
   // باید مینیمم 40px کشش باشد
   if (Math.abs(diffX) < threshold) return;
-  
-  // پیدا کردن شاخص تب فعلی
-  const activeTabId = TAB_ORDER[currentTabIndex];
-  
+
   // RTL است، پس منطق معکوس است
   if (diffX < 0) {
     // حرکت به راست (در RTL = تب بعدی)
     if (currentTabIndex < TAB_ORDER.length - 1) {
-      currentTabIndex++;
-      switchTab(TAB_ORDER[currentTabIndex]);
+      switchTab(TAB_ORDER[currentTabIndex + 1]);
     }
   } else {
     // حرکت به چپ (در RTL = تب قبلی)
     if (currentTabIndex > 0) {
-      currentTabIndex--;
-      switchTab(TAB_ORDER[currentTabIndex]);
+      switchTab(TAB_ORDER[currentTabIndex - 1]);
     }
   }
 }
@@ -312,18 +323,32 @@ function initTabs() {
 }
 
 function switchTab(tabId) {
-  // به‌روزرسانی currentTabIndex
-  currentTabIndex = TAB_ORDER.indexOf(tabId);
-  if (currentTabIndex === -1) currentTabIndex = 0;
-  
+  const newIndex = TAB_ORDER.indexOf(tabId);
+  if (newIndex === -1) return;
+  if (newIndex === currentTabIndex && document.getElementById('panel-' + tabId).classList.contains('active')) {
+    return; // از قبل همین تب فعاله، کاری لازم نیست
+  }
+
+  const oldIndex = currentTabIndex;
+  const direction = newIndex > oldIndex ? 'next' : (newIndex < oldIndex ? 'prev' : null);
+  currentTabIndex = newIndex;
+
   // اگر روی تب روزها باشیم currentDayIndex رو آپ‌دیت کن
   if (tabId.startsWith('day')) {
     currentDayIndex = Number(tabId.replace('day', ''));
   }
-  
+
   document.querySelectorAll('.tabbtn').forEach((b) => b.classList.toggle('active', b.dataset.tab === tabId));
-  document.querySelectorAll('.panel').forEach((p) => p.classList.toggle('active', p.id === 'panel-' + tabId));
-  
+
+  const oldPanel = document.querySelector('.panel.active');
+  const newPanel = document.getElementById('panel-' + tabId);
+
+  if (direction && oldPanel && newPanel && oldPanel !== newPanel) {
+    animatePanelSwitch(oldPanel, newPanel, direction);
+  } else {
+    document.querySelectorAll('.panel').forEach((p) => p.classList.toggle('active', p.id === 'panel-' + tabId));
+  }
+
   if (tabId.startsWith('day')) {
     renderDayPanel();
   } else if (tabId === 'progress') {
@@ -335,6 +360,29 @@ function switchTab(tabId) {
   } else if (tabId === 'profile') {
     renderProfile();
   }
+}
+
+// انیمیشن اسلاید بین دو تب (چه با تپ روی نوار تب، چه با سوایپ)
+// توجه: پنل‌های تب‌ها (روزها / پروفایل / جدول / نتیجه‌گیری) در DOM هم‌والد نیستند
+// و position مطلق هم ندارند، پس نمی‌توان هم‌زمان هر دو را «active» نگه داشت
+// (باعث جابه‌جایی/جهش چیدمان می‌شود). به همین دلیل پنل قدیمی فوراً مخفی می‌شود
+// و فقط پنل جدید با اسلاید وارد می‌شود.
+function animatePanelSwitch(oldPanel, newPanel, direction) {
+  // پاک‌سازی کلاس‌های باقی‌مانده از انیمیشن‌های قبلی که کامل نشده‌اند
+  document.querySelectorAll('.panel').forEach((p) => {
+    p.classList.remove('slide-left', 'slide-right', 'slide-enter-from-right', 'slide-enter-from-left');
+  });
+
+  oldPanel.classList.remove('active');
+
+  const inClass = direction === 'next' ? 'slide-enter-from-right' : 'slide-enter-from-left';
+  newPanel.classList.add('active', inClass);
+
+  const finishIn = () => {
+    newPanel.classList.remove(inClass);
+    newPanel.removeEventListener('animationend', finishIn);
+  };
+  newPanel.addEventListener('animationend', finishIn, { once: true });
 }
 
 /* ---------------------------------------------------------

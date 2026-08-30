@@ -459,12 +459,6 @@ hr.sep { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
   margin-bottom: 14px;
 }
 .day-header .day-name {
-  font-size: 13px;
-  color: var(--text-muted);
-  font-weight: 600;
-  margin-bottom: 4px;
-}
-.day-header .day-date {
   font-size: 16px;
   font-weight: 800;
   color: var(--accent);

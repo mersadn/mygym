@@ -124,12 +124,22 @@ main {
 
 .panel { 
   display: none; 
-  animation: fadein .18s ease; 
   pointer-events: none;
 }
 .panel.active { 
   display: block; 
   pointer-events: auto;
+}
+/* توجه: انیمیشن fadein عمداً روی .panel یا .panel.active به‌صورت دائمی
+   تعریف نشده. اگر اینجا باشه، هر بار که کلاس‌های اسلایدِ سوایپ
+   (slide-enter-from-right/left) بعد از پایان انیمیشن حذف می‌شن، چون
+   .panel هنوز animation:fadein داره، مرورگر animation-name رو عوض‌شده
+   می‌بینه و fadein رو دوباره از اول اجرا می‌کنه؛ همین باعث یک فلش/پرش
+   اضافه‌ی درست بعد از پایان اسلاید می‌شد که حس «رفرش شدن صفحه» می‌داد.
+   برای همین fadein رو به یک کلاس جدا (fade-in) منتقل کردیم که فقط برای
+   حالت‌های بدون اسلاید (بار اول لود شدن) به‌صورت موقت اضافه/حذف می‌شه. */
+.panel.fade-in {
+  animation: fadein .18s ease;
 }
 
 @keyframes fadein { from { opacity: 0; transform: translateY(4px);} to { opacity: 1; transform: translateY(0);} }

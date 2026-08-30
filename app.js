@@ -370,6 +370,15 @@ function switchTab(tabId) {
     animatePanelSwitch(oldPanel, newPanel, direction);
   } else {
     document.querySelectorAll('.panel').forEach((p) => p.classList.toggle('active', p.id === 'panel-' + tabId));
+    // برای حالت‌های بدون جهت مشخص (مثلاً بار اول لود شدن اپ) یک فید ساده
+    // نمایش می‌دیم؛ کلاس رو بعد از تموم شدن انیمیشن حذف می‌کنیم تا
+    // animation-name ثابت (fadein) باقی نمونه و دوباره ری‌استارت نشه.
+    if (newPanel) {
+      newPanel.classList.remove('fade-in');
+      void newPanel.offsetWidth; // ریست اجباری برای ری‌استارت درست انیمیشن
+      newPanel.classList.add('fade-in');
+      newPanel.addEventListener('animationend', () => newPanel.classList.remove('fade-in'), { once: true });
+    }
   }
 }
 
@@ -380,8 +389,10 @@ function switchTab(tabId) {
 // و فقط پنل جدید با اسلاید وارد می‌شود.
 function animatePanelSwitch(oldPanel, newPanel, direction) {
   // پاک‌سازی کلاس‌های باقی‌مانده از انیمیشن‌های قبلی که کامل نشده‌اند
+  // (fade-in هم پاک می‌شود چون اگر روی پنل جدید باقی بماند، دوباره با
+  // animation-name فرق‌کرده باعث اجرای اضافه‌ی fadein بعد از اسلاید می‌شود)
   document.querySelectorAll('.panel').forEach((p) => {
-    p.classList.remove('slide-left', 'slide-right', 'slide-enter-from-right', 'slide-enter-from-left');
+    p.classList.remove('slide-left', 'slide-right', 'slide-enter-from-right', 'slide-enter-from-left', 'fade-in');
   });
 
   oldPanel.classList.remove('active');

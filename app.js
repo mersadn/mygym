@@ -212,7 +212,10 @@ let currentDayIndex = todayPersianDayIndex();
 let editingLogId = null;
 let editingMeasureId = null;
 let touchStartX = 0;
+let touchStartY = 0;
 let touchEndX = 0;
+let touchEndY = 0;
+let isSwipingDays = false;
 
 const exerciseState = new Map(); // id -> { currentSet: 1, timerRunning: false, remaining: 0, intervalId: null }
 const SHOW_LIMIT = 5;
@@ -241,28 +244,50 @@ function showToast(msg) {
    5) سوایپ بین روزها
    --------------------------------------------------------- */
 function initSwipe() {
-  const container = document.getElementById('dayPanels');
-  if (!container) return;
-  container.addEventListener('touchstart', (e) => {
-    touchStartX = e.changedTouches[0].screenX;
-  });
-  container.addEventListener('touchend', (e) => {
-    touchEndX = e.changedTouches[0].screenX;
+  document.addEventListener('touchstart', (e) => {
+    // فقط روی روزها (نه روی modals یا دیگر elements)
+    if (e.target.closest('.modal-backdrop, button, input, select')) return;
+    touchStartX = e.touches[0].clientX;
+    touchStartY = e.touches[0].clientY;
+    isSwipingDays = true;
+  }, false);
+
+  document.addEventListener('touchmove', (e) => {
+    if (!isSwipingDays) return;
+    touchEndX = e.touches[0].clientX;
+    touchEndY = e.touches[0].clientY;
+  }, false);
+
+  document.addEventListener('touchend', (e) => {
+    if (!isSwipingDays) return;
+    isSwipingDays = false;
     handleSwipe();
-  });
+  }, false);
 }
 
 function handleSwipe() {
-  const threshold = 50;
-  const diff = touchStartX - touchEndX;
-  if (Math.abs(diff) < threshold) return;
+  const threshold = 40;
+  const diffX = touchStartX - touchEndX;
+  const diffY = Math.abs(touchStartY - touchEndY);
   
-  if (diff > 0) {
-    // حرکت به چپ - رفتن به روز بعد
-    if (currentDayIndex < 6) switchTab('day' + (currentDayIndex + 1));
+  // اگر حرکت عمودی بیش‌تر از افقی باشد، swipe محسوب نمی‌شود
+  if (diffY > Math.abs(diffX)) return;
+  
+  // باید مینیمم 40px کشش باشد
+  if (Math.abs(diffX) < threshold) return;
+  
+  if (diffX > 0) {
+    // حرکت به چپ - رفتن به روز بعدی
+    if (currentDayIndex < 6) {
+      currentDayIndex++;
+      switchTab('day' + currentDayIndex);
+    }
   } else {
-    // حرکت به راست - رفتن به روز قبل
-    if (currentDayIndex > 0) switchTab('day' + (currentDayIndex - 1));
+    // حرکت به راست - رفتن به روز قبلی
+    if (currentDayIndex > 0) {
+      currentDayIndex--;
+      switchTab('day' + currentDayIndex);
+    }
   }
 }
 
@@ -273,14 +298,18 @@ function initTabs() {
   document.querySelectorAll('.tabbtn').forEach((btn) => {
     btn.addEventListener('click', () => switchTab(btn.dataset.tab));
   });
-  initSwipe();
 }
 
 function switchTab(tabId) {
-  document.querySelectorAll('.tabbtn').forEach((b) => b.classList.toggle('active', b.dataset.tab === tabId));
-  document.querySelectorAll('.panel').forEach((p) => p.classList.toggle('active', p.id === 'panel-' + tabId));
+  // اگر روی تب روزها باشیم currentDayIndex رو آپ‌دیت کن
   if (tabId.startsWith('day')) {
     currentDayIndex = Number(tabId.replace('day', ''));
+  }
+  
+  document.querySelectorAll('.tabbtn').forEach((b) => b.classList.toggle('active', b.dataset.tab === tabId));
+  document.querySelectorAll('.panel').forEach((p) => p.classList.toggle('active', p.id === 'panel-' + tabId));
+  
+  if (tabId.startsWith('day')) {
     renderDayPanel();
   } else if (tabId === 'progress') {
     progressShowAll = false;
@@ -801,6 +830,7 @@ async function renderMeasurementsSection() {
 async function init() {
   buildDayTabs();
   initTabs();
+  initSwipe(); // اضافه کردن swipe initializer
   await firstRunSetup();
   document.getElementById('profileForm').addEventListener('submit', saveProfile);
   document.getElementById('exerciseForm').addEventListener('submit', saveExerciseForm);

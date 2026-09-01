@@ -1,5 +1,5 @@
 /* Service worker برای خانه‌ورز - کش کردن کامل برنامه برای کارکرد آفلاین */
-const CACHE_NAME = 'khaneh-varz-v3';
+const CACHE_NAME = 'khaneh-varz-v4';
 const APP_SHELL = [
   './',
   './index.html',

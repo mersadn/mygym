@@ -218,9 +218,12 @@ let touchEndY = 0;
 let isSwipingDays = false;
 
 // لیست تب‌های کلی (برای swipe بین همه تب‌ها)
+// ترتیب دقیقاً باید با ترتیب نمایش تب‌ها در نوار تب یکی باشد:
+// پروفایل، شنبه تا جمعه، جدول، نتیجه‌گیری
 const TAB_ORDER = [
+  'profile',
   'day0', 'day1', 'day2', 'day3', 'day4', 'day5', 'day6',
-  'profile', 'progress', 'conclusion'
+  'progress', 'conclusion'
 ];
 let currentTabIndex = 0; // شاخص تب فعال در TAB_ORDER
 
@@ -300,16 +303,16 @@ function handleSwipe() {
   if (Math.abs(diffX) < threshold) return;
 
   // RTL است، پس منطق معکوس است
+  // تب‌ها به صورت چرخشی (حلقه‌ای) هستند: بعد از آخرین تب به اولین تب
+  // برمی‌گردد و برعکس (از اولین تب به آخرین تب).
   if (diffX < 0) {
     // حرکت به راست (در RTL = تب بعدی)
-    if (currentTabIndex < TAB_ORDER.length - 1) {
-      switchTab(TAB_ORDER[currentTabIndex + 1]);
-    }
+    const nextIndex = (currentTabIndex + 1) % TAB_ORDER.length;
+    switchTab(TAB_ORDER[nextIndex], 'next');
   } else {
     // حرکت به چپ (در RTL = تب قبلی)
-    if (currentTabIndex > 0) {
-      switchTab(TAB_ORDER[currentTabIndex - 1]);
-    }
+    const prevIndex = (currentTabIndex - 1 + TAB_ORDER.length) % TAB_ORDER.length;
+    switchTab(TAB_ORDER[prevIndex], 'prev');
   }
 }
 
@@ -322,7 +325,7 @@ function initTabs() {
   });
 }
 
-function switchTab(tabId) {
+function switchTab(tabId, forcedDirection) {
   const newIndex = TAB_ORDER.indexOf(tabId);
   if (newIndex === -1) return;
   if (newIndex === currentTabIndex && document.getElementById('panel-' + tabId).classList.contains('active')) {
@@ -330,7 +333,9 @@ function switchTab(tabId) {
   }
 
   const oldIndex = currentTabIndex;
-  const direction = newIndex > oldIndex ? 'next' : (newIndex < oldIndex ? 'prev' : null);
+  // forcedDirection برای حالت چرخشی (سوایپ از آخرین تب به اولین تب یا برعکس)
+  // استفاده می‌شود چون در آن حالت مقایسه‌ی ساده‌ی index جهت اشتباه می‌دهد.
+  const direction = forcedDirection || (newIndex > oldIndex ? 'next' : (newIndex < oldIndex ? 'prev' : null));
   currentTabIndex = newIndex;
 
   // اگر روی تب روزها باشیم currentDayIndex رو آپ‌دیت کن
